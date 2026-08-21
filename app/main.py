@@ -11,12 +11,14 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 SERVICE_NAME = "sm-audit-log-center"
 DISPLAY_NAME = "SM Audit Log Center"
 DESCRIPTION = "统一审计与日志中心：操作审计、日志检索、异常行为检测与合规报表"
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("SM_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",") if h.strip()]
 REQUESTS = {"total": 0, "errors": 0, "latency_ms_total": 0.0}
+INTEGRATION_DEPENDENCIES = ['sm-iam']
+INTEGRATION_EVENTS = ["health.checked", "resource.changed", "audit.recorded"]
 
 app = FastAPI(title=DISPLAY_NAME, version=VERSION, description=DESCRIPTION, docs_url=None, redoc_url=None)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
@@ -87,3 +89,17 @@ def metrics() -> dict[str, object]:
     total = int(REQUESTS["total"])
     avg = round(float(REQUESTS["latency_ms_total"]) / total, 2) if total else 0.0
     return {"service": SERVICE_NAME, "version": VERSION, "requests_total": total, "errors_total": int(REQUESTS["errors"]), "avg_latency_ms": avg}
+
+
+@app.get("/api/integration/manifest")
+def integration_manifest() -> dict[str, object]:
+    return {
+        "service": SERVICE_NAME,
+        "name": DISPLAY_NAME,
+        "version": VERSION,
+        "dependencies": INTEGRATION_DEPENDENCIES,
+        "events": INTEGRATION_EVENTS,
+        "health_path": "/health",
+        "metrics_path": "/api/ops/metrics",
+        "overview_path": "/api/overview",
+    }
