@@ -38,7 +38,7 @@ AUDIT_CENTER_URL = os.getenv("SM_AUDIT_CENTER_URL", "")
 INTEGRATION_DEPENDENCIES = ['sm-iam', 'sm-audit-log-center']
 INTEGRATION_EVENTS = ["health.checked", "resource.changed", "audit.recorded"]
 _db_conn: sqlite3.Connection | None = None
-_db_lock = threading.Lock()
+_db_lock = threading.RLock()
 
 
 def db() -> sqlite3.Connection:
