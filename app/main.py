@@ -35,7 +35,7 @@ INTERNAL_API_KEY = os.getenv("SM_INTERNAL_API_KEY", "")
 JWT_SECRET = os.getenv("SM_JWT_SECRET", "")
 DATABASE_PATH = os.getenv("SM_DATABASE_PATH", "")
 AUDIT_CENTER_URL = os.getenv("SM_AUDIT_CENTER_URL", "")
-INTEGRATION_DEPENDENCIES = ['sm-iam']
+INTEGRATION_DEPENDENCIES = ['sm-iam', 'sm-audit-log-center']
 INTEGRATION_EVENTS = ["health.checked", "resource.changed", "audit.recorded"]
 _db_conn: sqlite3.Connection | None = None
 _db_lock = threading.Lock()
@@ -92,6 +92,31 @@ def internal_write_allowed(request: Request) -> bool:
     if not INTERNAL_API_KEY:
         return False
     return secrets.compare_digest(request.headers.get("X-Internal-Token", ""), INTERNAL_API_KEY)
+
+
+def record_audit(action: str, actor: str, detail: str = "", request_id: str = "", trace_id: str = "") -> None:
+    """本地写入带 SM3 完整性摘要的审计事件，并异步上报集中审计中心（不阻塞请求）。"""
+    import urllib.request as _urllib_request
+    event_id = str(uuid.uuid4())
+    event_timestamp = datetime.now(UTC).isoformat()
+    event = {"event_id": event_id, "service": SERVICE_NAME, "action": action, "actor": actor, "timestamp": event_timestamp, "request_id": request_id[:64], "trace_id": trace_id[:64], "detail": detail}
+    canonical = json.dumps(event, ensure_ascii=False, sort_keys=True)
+    integrity = sm3_hex(canonical)
+    with _db_lock:
+        db().execute(
+            "INSERT INTO audit_events (event_id, service, action, actor, timestamp, request_id, trace_id, detail, integrity) VALUES (?,?,?,?,?,?,?,?,?)",
+            (event_id, SERVICE_NAME, action, actor, event_timestamp, request_id[:64], trace_id[:64], canonical, integrity),
+        )
+        db().commit()
+    if AUDIT_CENTER_URL:
+        def _send() -> None:
+            try:
+                body = json.dumps({**event, "integrity": integrity}).encode("utf-8")
+                request = _urllib_request.Request(AUDIT_CENTER_URL.rstrip("/") + "/api/audit/events", data=body, headers={"Content-Type": "application/json", "X-Internal-Token": INTERNAL_API_KEY}, method="POST")
+                _urllib_request.urlopen(request, timeout=2)
+            except Exception:
+                pass
+        threading.Thread(target=_send, daemon=True).start()
 
 
 def sm3_hex(value: str) -> str:
@@ -174,6 +199,8 @@ async def security_headers(request: Request, call_next):
     started = time.perf_counter()
     request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
     trace_id = request.headers.get("X-Trace-Id") or str(uuid.uuid4())
+    request.state.request_id = request_id[:64]
+    request.state.trace_id = trace_id[:64]
     if request.url.path.startswith("/api/") and request.url.path not in PUBLIC_PATHS and not authorized(request):
         response = Response(status_code=status.HTTP_401_UNAUTHORIZED, content="认证无效")
     else:
@@ -234,6 +261,7 @@ def create_item(payload: Item, request: Request) -> dict[str, object]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "内部写入令牌无效")
     item = {"id": str(uuid.uuid4()), **payload.model_dump(), "created_at": datetime.now(UTC).isoformat()}
     ITEMS.append(item)
+    record_audit("resource.created", "internal", f"id={item['id']} name={payload.name}", getattr(request.state, "request_id", ""), getattr(request.state, "trace_id", ""))
     return item
 
 @app.patch("/api/items/{item_id}/status")
@@ -243,6 +271,7 @@ def update_item_status(item_id: str, item_status: Literal["planned", "active", "
     for item in ITEMS:
         if item["id"] == item_id:
             item["status"] = item_status
+            record_audit("resource.status_changed", "internal", f"id={item_id} status={item_status}", getattr(request.state, "request_id", ""), getattr(request.state, "trace_id", ""))
             return item
     raise HTTPException(status.HTTP_404_NOT_FOUND, "资源不存在")
 
@@ -338,6 +367,7 @@ def security_baseline() -> dict[str, object]:
             "internal_token": bool(INTERNAL_API_KEY),
             "jwt": bool(JWT_SECRET or setting("jwt_secret")),
             "audit_persistence": True,
+            "audit_forwarding": bool(AUDIT_CENTER_URL),
         },
         "recommended": ["OIDC/MFA", "KMS/HSM", "centralized audit", "OpenTelemetry"],
     }
