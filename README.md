@@ -1,6 +1,6 @@
 # SM-Audit-Log-Center
 
-统一审计与日志中心：事件接入、检索、SM3 完整性链与合规报表。
+统一审计与日志中心：事件接入、检索、SM3 完整性链、异常检测与合规报表。
 
 ## 本地运行
 
@@ -8,7 +8,7 @@
 git clone https://github.com/luoshitianchen/SM-Audit-Log-Center.git
 cd SM-Audit-Log-Center
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\\.venv\\Scripts\\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8320
 ```
@@ -17,18 +17,38 @@ uvicorn app.main:app --reload --port 8320
 
 ## 企业能力
 
-- 事件接入
-- 完整性校验
-- 检索过滤
-- 合规报表
+- 事件接入（SM3 完整性 + 链式哈希，防篡改）
+- 完整性校验与篡改检测（`GET /api/audit/verify`）
+- 检索过滤（按服务 / 动作 / 操作者 / 时间）
+- 合规报表（`GET /api/audit/stats`）
+- 异常检测与告警（未知服务 / 完整性不符 / 高频突发 / 事件重放）
 - `/health` 健康探针、`/readyz` 就绪探针
 - `/api/overview` 业务概览、`/api/ops/metrics` 运维指标、`/metrics` Prometheus 指标
 - `/api/integration/manifest` 服务契约、`/api/security/baseline` 安全基线
 - 国密 SM3 / SM4-CBC（带 SM3 MAC 完整性校验，防密文篡改）
 - 安全响应头、CSP、TrustedHost、限流、请求体限制、内部写入令牌
-- 审计事件本地落库并异步转发集中审计中心
 - Docker 只读文件系统、能力剥离、进程限制
 - GitHub Actions CI 与安全扫描（pip-audit / bandit / ruff / SBOM / gitleaks）
+
+## 异常检测与告警（安全运营）
+
+接入审计事件时自动执行检测规则，命中即生成告警并纳入台账：
+
+| 规则 | 级别 | 说明 |
+|---|---|---|
+| `unknown_service` | high | 未登记/未纳管服务上报，疑似伪造 |
+| `integrity_mismatch` | high | 事件完整性摘要与重算不符，疑似篡改 |
+| `rate_burst` | medium | 同一操作者在窗口内高频写入，疑似滥用/暴力 |
+| `replay_duplicate` | medium | 重复事件 ID，疑似重放攻击 |
+
+端点：
+
+- `GET /api/audit/anomalies`：实时异常概览（未处置告警数、规则/服务分布、最近告警）
+- `GET /api/audit/alerts`：告警台账（按状态 / 级别 / 服务过滤 + 分页）
+- `GET /api/audit/alerts/{alert_id}`：告警详情
+- `POST /api/audit/alerts/{alert_id}/ack`：确认告警并留痕（`note`）
+
+阈值可通过环境变量配置：`SM_ALERT_KNOWN_SERVICES`（服务白名单，逗号分隔）、`SM_ALERT_RATE_BURST_WINDOW`（秒）、`SM_ALERT_RATE_BURST_THRESHOLD`（条数）。
 
 ## 安全说明
 

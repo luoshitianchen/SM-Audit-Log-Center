@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0 - 2026-09-01
+
+- 新增异常检测与告警层（安全运营）：
+  - 未知服务上报检测（未纳管/疑似伪造，high）。
+  - 事件完整性摘要与重算不符检测（疑似篡改，high）。
+  - 同一操作者窗口内高频写入检测（疑似滥用/暴力，medium）。
+  - 重复事件 ID 检测（疑似重放攻击，medium）。
+- 新增端点：`GET /api/audit/anomalies`、`GET /api/audit/alerts`、`GET /api/audit/alerts/{id}`、`POST /api/audit/alerts/{id}/ack`。
+- 告警阈值可通过 `SM_ALERT_KNOWN_SERVICES` / `SM_ALERT_RATE_BURST_WINDOW` / `SM_ALERT_RATE_BURST_THRESHOLD` 环境变量配置；告警支持确认（acknowledged）留痕闭环。
+- `/api/audit/stats` 增加 `alerts.open` 统计；`/api/overview` 增加 `open_alerts`。
+- 新增 5 个领域测试，测试套件 13 用例全部通过。
+
 ## 2.0.0 - 2026-08-31
 
 - 落地真实领域能力：统一审计与日志中心：事件接入、检索、SM3 完整性链与合规报表。
