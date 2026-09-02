@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
 """SM Audit Log Center —— 统一审计与日志中心：事件接入、SM3 完整性链、异常检测与合规报表。"""
 
 from __future__ import annotations
 
 import json
 import os
+import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from app import base
 
 SERVICE = "sm-audit-log-center"
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 NAME = "SM Audit Log Center"
 DESCRIPTION = "统一审计与日志中心：事件接入、SM3 完整性链、异常检测与合规报表"
 PORT = 8320
@@ -33,6 +33,8 @@ DEFAULT_KNOWN_SERVICES = {
 # 高频突发检测：同一 (service, actor) 在窗口内的写入条数阈值
 RATE_BURST_WINDOW = int(os.getenv("SM_ALERT_RATE_BURST_WINDOW", "60"))
 RATE_BURST_THRESHOLD = int(os.getenv("SM_ALERT_RATE_BURST_THRESHOLD", "60"))
+# 告警推送：配置后，告警产生即异步转发企业通知中心（SM-Notification-Center）
+NOTIFICATION_CENTER_URL = os.getenv("SM_NOTIFICATION_CENTER_URL", "")
 
 
 def _now() -> str:
@@ -70,12 +72,42 @@ def _init() -> None:
         )
 
 
+def _send_notification(alert: dict[str, Any]) -> None:
+    """将告警异步推送到企业通知中心（不阻塞审计写入）。"""
+    import urllib.request as _ur
+    try:
+        center = NOTIFICATION_CENTER_URL
+        if not center:
+            return
+        body = json.dumps(alert, ensure_ascii=False).encode("utf-8")
+        req = _ur.Request(
+            center.rstrip("/") + "/api/notifications/alert",
+            data=body,
+            headers={"Content-Type": "application/json", "X-Internal-Token": base.internal_api_key()},
+            method="POST",
+        )
+        _ur.urlopen(req, timeout=2)
+    except Exception:
+        pass
+
+
 def _raise_alert(rule: str, severity: str, service: str, actor: str, event_id: str, detail: str) -> None:
+    alert = {
+        "alert_id": str(uuid.uuid4()),
+        "rule": rule,
+        "severity": severity,
+        "service": service,
+        "actor": actor,
+        "event_id": event_id,
+        "detail": detail[:2000],
+        "detected_at": _now(),
+    }
     with base.db_ctx() as conn:
         conn.execute(
             "INSERT INTO audit_alerts (alert_id, rule, severity, service, actor, event_id, detail, detected_at) VALUES (?,?,?,?,?,?,?,?)",
-            (str(uuid.uuid4()), rule, severity, service, actor, event_id, detail, _now()),
+            (alert["alert_id"], rule, severity, service, actor, event_id, detail, alert["detected_at"]),
         )
+    threading.Thread(target=_send_notification, args=(alert,), daemon=True).start()
 
 
 def _detect(payload: "AuditEventIn") -> None:

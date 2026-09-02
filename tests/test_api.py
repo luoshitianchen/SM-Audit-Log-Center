@@ -149,3 +149,58 @@ def test_alerts_list_and_ack(client):
     assert ack.json()["status"] == "acknowledged"
     assert client.get("/api/audit/alerts", params={"status": "acknowledged"}).json()["total"] == 1
     assert client.get("/api/audit/anomalies").json()["open"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# 告警 → 通知中心联动
+# --------------------------------------------------------------------------- #
+def test_alert_triggers_notification(client, monkeypatch):
+    captured = []
+    import app.main as main
+    monkeypatch.setattr(main, "_send_notification", lambda alert: captured.append(alert))
+    _ingest(client, service="sm-rogue-service")
+    assert len(captured) == 1
+    alert = captured[0]
+    assert alert["rule"] == "unknown_service"
+    assert alert["severity"] == "high"
+    assert alert["service"] == "sm-rogue-service"
+    assert alert["alert_id"]
+
+
+def test_send_notification_http(monkeypatch):
+    import json as _json
+    import threading as _threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    received = {}
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("content-length", "0"))
+            received["path"] = self.path
+            received["body"] = _json.loads(self.rfile.read(length))
+            self.send_response(201)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    port = server.server_address[1]
+    _threading.Thread(target=server.handle_request, daemon=True).start()
+
+    import app.main as main
+    monkeypatch.setattr(main, "NOTIFICATION_CENTER_URL", f"http://127.0.0.1:{port}")
+    alert = {"alert_id": "al-x", "rule": "rate_burst", "severity": "medium", "service": "sm-erp", "actor": "u", "event_id": "", "detail": "d", "detected_at": "now"}
+    main._send_notification(alert)
+
+    import time as _time
+    for _ in range(50):
+        if received:
+            break
+        _time.sleep(0.1)
+    server.server_close()
+    assert received.get("path") == "/api/notifications/alert"
+    assert received["body"]["rule"] == "rate_burst"
+    assert received["body"]["service"] == "sm-erp"

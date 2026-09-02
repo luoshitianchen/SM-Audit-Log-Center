@@ -22,6 +22,7 @@ uvicorn app.main:app --reload --port 8320
 - 检索过滤（按服务 / 动作 / 操作者 / 时间）
 - 合规报表（`GET /api/audit/stats`）
 - 异常检测与告警（未知服务 / 完整性不符 / 高频突发 / 事件重放）
+- 告警推送联动企业通知中心
 - `/health` 健康探针、`/readyz` 就绪探针
 - `/api/overview` 业务概览、`/api/ops/metrics` 运维指标、`/metrics` Prometheus 指标
 - `/api/integration/manifest` 服务契约、`/api/security/baseline` 安全基线
@@ -49,6 +50,11 @@ uvicorn app.main:app --reload --port 8320
 - `POST /api/audit/alerts/{alert_id}/ack`：确认告警并留痕（`note`）
 
 阈值可通过环境变量配置：`SM_ALERT_KNOWN_SERVICES`（服务白名单，逗号分隔）、`SM_ALERT_RATE_BURST_WINDOW`（秒）、`SM_ALERT_RATE_BURST_THRESHOLD`（条数）。
+
+### 告警推送（联动企业通知中心）
+
+- 配置 `SM_NOTIFICATION_CENTER_URL` 后，告警产生即异步推送至通知中心 `POST /api/notifications/alert`（携带 `X-Internal-Token`），自动进入 `security-alert` 渠道台账并即时投递。
+- 未配置该变量时行为不变（仅本地告警台账，不影响写入性能）。
 
 ## 安全说明
 

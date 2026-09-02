@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0 - 2026-09-02
+
+- 新增告警推送：配置 `SM_NOTIFICATION_CENTER_URL` 后，异常告警（unknown_service / integrity_mismatch / rate_burst / replay_duplicate）产生即异步推送企业通知中心 `POST /api/notifications/alert`。
+- 告警推送不阻塞审计写入（后台线程，失败静默降级为仅本地台账）。
+- 新增 2 个联动测试（触发链路 + 真实 HTTP 推送），测试套件 15 用例全部通过。
+
 ## 2.1.0 - 2026-09-01
 
 - 新增异常检测与告警层（安全运营）：
