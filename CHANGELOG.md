@@ -1,22 +1,9 @@
 # Changelog
 
-## 2.2.0 - 2026-09-02
+## 3.0.0 - 2026-09-05
 
-- 新增告警推送：配置 `SM_NOTIFICATION_CENTER_URL` 后，异常告警（unknown_service / integrity_mismatch / rate_burst / replay_duplicate）产生即异步推送企业通知中心 `POST /api/notifications/alert`。
-- 告警推送不阻塞审计写入（后台线程，失败静默降级为仅本地台账）。
-- 新增 2 个联动测试（触发链路 + 真实 HTTP 推送），测试套件 15 用例全部通过。
+- 大版本 3.0.0：全平台版本统一；新增 SBOM（CycloneDX 1.5）物料清单；CI 增加依赖审计（pip-audit）与 SBOM 完整性校验；补全平台级部署文档与编排入口。
 
-## 2.1.0 - 2026-09-01
-
-- 新增异常检测与告警层（安全运营）：
-  - 未知服务上报检测（未纳管/疑似伪造，high）。
-  - 事件完整性摘要与重算不符检测（疑似篡改，high）。
-  - 同一操作者窗口内高频写入检测（疑似滥用/暴力，medium）。
-  - 重复事件 ID 检测（疑似重放攻击，medium）。
-- 新增端点：`GET /api/audit/anomalies`、`GET /api/audit/alerts`、`GET /api/audit/alerts/{id}`、`POST /api/audit/alerts/{id}/ack`。
-- 告警阈值可通过 `SM_ALERT_KNOWN_SERVICES` / `SM_ALERT_RATE_BURST_WINDOW` / `SM_ALERT_RATE_BURST_THRESHOLD` 环境变量配置；告警支持确认（acknowledged）留痕闭环。
-- `/api/audit/stats` 增加 `alerts.open` 统计；`/api/overview` 增加 `open_alerts`。
-- 新增 5 个领域测试，测试套件 13 用例全部通过。
 
 ## 2.0.0 - 2026-08-31
 
