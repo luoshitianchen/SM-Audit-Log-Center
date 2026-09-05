@@ -1,0 +1,51 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:00c87c39-1324-4a81-be7d-6689e1246022",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "SM-Audit-Log-Center",
+      "version": "3.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "fastapi",
+      "version": "0.141.1",
+      "purl": "pkg:pypi/fastapi@0.141.1"
+    },
+    {
+      "type": "library",
+      "name": "uvicorn[standard]",
+      "version": "0.52.4",
+      "purl": "pkg:pypi/uvicorn[standard]@0.52.4"
+    },
+    {
+      "type": "library",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "purl": "pkg:pypi/pydantic@2.13.4"
+    },
+    {
+      "type": "library",
+      "name": "pytest",
+      "version": "9.1.1",
+      "purl": "pkg:pypi/pytest@9.1.1"
+    },
+    {
+      "type": "library",
+      "name": "httpx",
+      "version": "0.28.1",
+      "purl": "pkg:pypi/httpx@0.28.1"
+    },
+    {
+      "type": "library",
+      "name": "gmssl",
+      "version": "3.2.2",
+      "purl": "pkg:pypi/gmssl@3.2.2"
+    }
+  ]
+}

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from app import base
 
 SERVICE = "sm-audit-log-center"
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 NAME = "SM Audit Log Center"
 DESCRIPTION = "统一审计与日志中心：事件接入、SM3 完整性链、检索与合规报表"
 PORT = 8320
