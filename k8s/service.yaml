@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sm-audit-log-center
+  namespace: sm
+  labels:
+    app: sm-audit-log-center
+    platform: sm-suite
+spec:
+  type: ClusterIP
+  selector:
+    app: sm-audit-log-center
+  ports:
+  - name: http
+    port: 8320
+    targetPort: http
+    protocol: TCP
