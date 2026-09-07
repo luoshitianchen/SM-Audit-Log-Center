@@ -111,8 +111,8 @@ def list_events(
         params.append(since)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     with base.db_ctx() as conn:
-        total = conn.execute(f"SELECT COUNT(*) FROM audit_records{where}", params).fetchone()[0]
-        rows = conn.execute(f"SELECT * FROM audit_records{where} ORDER BY id DESC LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) FROM audit_records{where}", params).fetchone()[0]  # nosec B608  # SQL片段为程序生成，用户输入已参数化
+        rows = conn.execute(f"SELECT * FROM audit_records{where} ORDER BY id DESC LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()  # nosec B608  # SQL片段为程序生成，用户输入已参数化
     return {"items": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
