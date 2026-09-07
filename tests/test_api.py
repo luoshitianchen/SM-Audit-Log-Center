@@ -1,4 +1,7 @@
-"""SM Audit Log Center 领域测试：事件接入、SM3 完整性链、检索与篡改检测。"""
+"""SM Audit Log Center 领域测试：事件接入、SM3 完整性链、检索、篡改检测与异常告警。"""
+
+import uuid
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +22,6 @@ def client(monkeypatch):
 
 
 def _ingest(client, action="auth.login", service="sm-erp", event_id=None):
-    import uuid
     payload = {
         "event_id": event_id or str(uuid.uuid4()),
         "service": service,
@@ -89,3 +91,116 @@ def test_manifest_and_crypto(client):
 def test_write_requires_auth(client):
     del client.headers["X-Internal-Token"]
     assert _ingest(client).status_code == 401
+
+
+# --------------------------------------------------------------------------- #
+# 异常检测与告警
+# --------------------------------------------------------------------------- #
+def test_unknown_service_alert(client):
+    r = _ingest(client, service="sm-rogue-service")
+    assert r.status_code == 201
+    anomalies = client.get("/api/audit/anomalies").json()
+    assert anomalies["open"] == 1
+    assert any(a["rule"] == "unknown_service" for a in anomalies["by_rule"])
+    assert client.get("/api/audit/stats").json()["alerts"]["open"] == 1
+
+
+def test_integrity_mismatch_alert(client):
+    payload = {
+        "event_id": str(uuid.uuid4()), "service": "sm-erp", "action": "auth.login",
+        "actor": "admin", "timestamp": "2026-08-31T00:00:00+00:00",
+        "integrity": "f" * 64,
+    }
+    assert client.post("/api/audit/events", json=payload).status_code == 201
+    anomalies = client.get("/api/audit/anomalies").json()
+    assert any(a["rule"] == "integrity_mismatch" for a in anomalies["by_rule"])
+
+
+def test_replay_alert(client):
+    event_id = "evt-replay-0001"
+    assert _ingest(client, event_id=event_id).status_code == 201
+    assert _ingest(client, event_id=event_id).status_code == 409
+    anomalies = client.get("/api/audit/anomalies").json()
+    assert any(a["rule"] == "replay_duplicate" for a in anomalies["by_rule"])
+
+
+def test_rate_burst_alert(client, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main, "RATE_BURST_THRESHOLD", 2)
+    now = datetime.now(UTC).isoformat()
+    for i in range(2):
+        payload = {
+            "event_id": f"evt-burst-{i}", "service": "sm-erp", "action": "auth.login",
+            "actor": "burst-user", "timestamp": now,
+        }
+        assert client.post("/api/audit/events", json=payload).status_code == 201
+    anomalies = client.get("/api/audit/anomalies").json()
+    assert any(a["rule"] == "rate_burst" for a in anomalies["by_rule"])
+
+
+def test_alerts_list_and_ack(client):
+    _ingest(client, service="sm-rogue")
+    alerts = client.get("/api/audit/alerts", params={"severity": "high"}).json()
+    assert alerts["total"] == 1
+    alert_id = alerts["items"][0]["alert_id"]
+    assert client.get(f"/api/audit/alerts/{alert_id}").json()["status"] == "open"
+    ack = client.post(f"/api/audit/alerts/{alert_id}/ack", json={"note": "已核实为测试"})
+    assert ack.status_code == 200
+    assert ack.json()["status"] == "acknowledged"
+    assert client.get("/api/audit/alerts", params={"status": "acknowledged"}).json()["total"] == 1
+    assert client.get("/api/audit/anomalies").json()["open"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# 告警 → 通知中心联动
+# --------------------------------------------------------------------------- #
+def test_alert_triggers_notification(client, monkeypatch):
+    captured = []
+    import app.main as main
+    monkeypatch.setattr(main, "_send_notification", lambda alert: captured.append(alert))
+    _ingest(client, service="sm-rogue-service")
+    assert len(captured) == 1
+    alert = captured[0]
+    assert alert["rule"] == "unknown_service"
+    assert alert["severity"] == "high"
+    assert alert["service"] == "sm-rogue-service"
+    assert alert["alert_id"]
+
+
+def test_send_notification_http(monkeypatch):
+    import json as _json
+    import threading as _threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    received = {}
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("content-length", "0"))
+            received["path"] = self.path
+            received["body"] = _json.loads(self.rfile.read(length))
+            self.send_response(201)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    port = server.server_address[1]
+    _threading.Thread(target=server.handle_request, daemon=True).start()
+
+    import app.main as main
+    monkeypatch.setattr(main, "NOTIFICATION_CENTER_URL", f"http://127.0.0.1:{port}")
+    alert = {"alert_id": "al-x", "rule": "rate_burst", "severity": "medium", "service": "sm-erp", "actor": "u", "event_id": "", "detail": "d", "detected_at": "now"}
+    main._send_notification(alert)
+
+    import time as _time
+    for _ in range(50):
+        if received:
+            break
+        _time.sleep(0.1)
+    server.server_close()
+    assert received.get("path") == "/api/notifications/alert"
+    assert received["body"]["rule"] == "rate_burst"
+    assert received["body"]["service"] == "sm-erp"
