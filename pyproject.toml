@@ -1,16 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "SM-Audit-Log-Center"
-version = "2.0.0"
-description = "统一审计与日志中心：事件接入、检索、SM3 完整性链与合规报表"
+name = "sm-service"
+version = "1.0.0"
 requires-python = ">=3.11"
 
 [tool.ruff]
-line-length = 200
+line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-v --tb=short"
