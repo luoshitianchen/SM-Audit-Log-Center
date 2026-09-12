@@ -44,13 +44,41 @@ async def record_audit(
 
 
 def _forward_audit(event: dict) -> None:
+    """把审计事件异步投递到通知中心 POST /alerts/ingest。
+
+    通知中心接收契约 (AlertIngest)：
+      source   — 事件来源服务（必填，<=80）
+      summary  — 告警摘要（必填，<=500）
+      severity — critical / warning / info
+      details  — 明细（含 event_id / 完整性摘要等追溯信息）
+    认证：X-Internal-Token 需与通知中心 SM_INTERNAL_API_KEY 一致。
+    """
+
     def _send() -> None:
         try:
             import urllib.request
             from urllib.parse import urlparse
-            body = json.dumps(event).encode("utf-8")
+            summary = f"{event.get('action', 'audit.event')} actor={event.get('actor', '')}"
+            details = json.dumps(
+                {
+                    "event_id": event.get("event_id", ""),
+                    "timestamp": event.get("timestamp", ""),
+                    "request_id": event.get("request_id", ""),
+                    "trace_id": event.get("trace_id", ""),
+                    "integrity": event.get("integrity", ""),
+                    "detail": event.get("detail", ""),
+                },
+                ensure_ascii=False,
+            )[:2000]
+            payload = {
+                "source": str(event.get("service", settings.SERVICE_NAME))[:80],
+                "summary": summary[:500],
+                "severity": "warning",
+                "details": details,
+            }
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             req = urllib.request.Request(
-                f"{settings.AUDIT_CENTER_URL.rstrip('/')}/api/audit/events",
+                f"{settings.AUDIT_CENTER_URL.rstrip('/')}/alerts/ingest",
                 data=body,
                 headers={"Content-Type": "application/json", "X-Internal-Token": settings.INTERNAL_API_KEY},
                 method="POST",
@@ -61,4 +89,5 @@ def _forward_audit(event: dict) -> None:
             urllib.request.urlopen(req, timeout=2)  # nosec B310
         except Exception:
             pass
+
     threading.Thread(target=_send, daemon=True).start()
