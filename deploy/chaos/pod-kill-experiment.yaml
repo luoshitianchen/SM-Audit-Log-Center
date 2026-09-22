@@ -1,0 +1,16 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: sm-audit-log-center-pod-kill
+  namespace: sm-prod
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - sm-prod
+    labelSelectors:
+      app.kubernetes.io/instance: sm-audit-log-center
+      app.kubernetes.io/name: sm-audit-log-center
+  scheduler:
+    cron: '@every 30m'
